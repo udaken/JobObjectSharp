@@ -27,11 +27,21 @@ namespace JobObjectSharp
             return job;
         }
 
-        private JobObject()
+        private JobObject(SafeJobHandle safeHandle) => SafeHandle = safeHandle;
+
+        private JobObject(string name = null)
         {
-            SafeHandle = Native.CreateJobObject(IntPtr.Zero, null);
+            SafeHandle = Native.CreateJobObject(IntPtr.Zero, name);
             if (SafeHandle.IsInvalid)
                 throw new Win32Exception();
+        }
+
+        private static JobObject Open(string name)
+        {
+            var safeHandle = Native.OpenJobObject(JobAccessFlags.All, false, name);
+            if (safeHandle.IsInvalid)
+                throw new Win32Exception();
+            return new JobObject(safeHandle);
         }
 
         public void AssignProcess(int processId)
@@ -51,6 +61,14 @@ namespace JobObjectSharp
                 throw new ArgumentException(nameof(hProcess));
 
             if (!Native.AssignProcessToJobObject(SafeHandle, hProcess))
+            {
+                throw new Win32Exception();
+            }
+        }
+
+        public void Terminate(int exitCode = 0)
+        {
+            if (!Native.TerminateJobObject(SafeHandle, exitCode))
             {
                 throw new Win32Exception();
             }
@@ -97,6 +115,7 @@ namespace JobObjectSharp
     [Flags]
     enum ProcessAccessFlags : uint
     {
+        None = 0,
         All = 0x001F0FFF,
         Terminate = 0x00000001,
         CreateThread = 0x00000002,
@@ -109,7 +128,25 @@ namespace JobObjectSharp
         SetInformation = 0x00000200,
         QueryInformation = 0x00000400,
         QueryLimitedInformation = 0x00001000,
-        Synchronize = 0x00100000
+        Synchronize = 0x00100000,
+    }
+    [Flags]
+    enum JobAccessFlags : uint
+    {
+        None = 0,
+        All = 0x1F001F,
+
+        AssignProcess = 0x0001,
+        SetAttributes = 0x0002,
+        Query = 0x0004,
+        Terminate = 0x0008,
+        SetSecurityAttributes = 0x0010,
+
+        Delete = 0x00010000,
+        ReadControl = 0x00020000,
+        WriteDac = 0x00040000,
+        WriteOwner = 0x00080000,
+        Synchronize = 0x00100000,
     }
     enum JobObjectInfoClass
     {
@@ -119,11 +156,12 @@ namespace JobObjectSharp
         EndOfJobTimeInformation = 6,
         ExtendedLimitInformation = 9,
         SecurityLimitInformation = 5,
-        GroupInformation = 11
+        GroupInformation = 11,
     }
     [Flags]
     enum JobObjectLimit : uint
     {
+        None = 0,
         // Basic Limits
         Workingset = 0x00000001,
         ProcessTime = 0x00000002,
@@ -186,7 +224,15 @@ namespace JobObjectSharp
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SetInformationJobObject(SafeJobHandle hJob,
-           JobObjectInfoClass JobObjectInfoClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION lpJobObjectInfo,
+           JobObjectInfoClass JobObjectInfoClass,
+           ref JOBOBJECT_BASIC_LIMIT_INFORMATION lpJobObjectInfo,
+           int cbJobObjectInfoLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetInformationJobObject(SafeJobHandle hJob,
+           JobObjectInfoClass JobObjectInfoClass,
+           ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION lpJobObjectInfo,
            int cbJobObjectInfoLength);
 
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -200,10 +246,20 @@ namespace JobObjectSharp
              int processId);
 
         [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern SafeJobHandle OpenJobObject(
+             JobAccessFlags dwDesiredAccess,
+             bool bInheritHandle,
+             string lpName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern SafeJobHandle CreateJobObject(IntPtr lpJobAttributes, string lpName);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public extern static bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public extern static bool TerminateJobObject(SafeJobHandle handle, int uExitCode);
     }
 }
